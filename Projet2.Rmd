@@ -1,0 +1,1650 @@
+
+---
+title: "<FONT color='#0066CC'><FONT size = 4 ><DIV align= center> AP-4209 ESIEE-Paris: 2023 -2024 </DIV></FONT></FONT>"
+output:
+  html_document:
+    highlight: textmate
+    theme: readable
+    toc: yes
+    toc_depth: 6
+    toc_float: yes
+---
+
+
+
+```{=html}
+<style type="text/css">
+body, td {font-size: 17px;}
+code.r{font-size: 5px;}
+
+pre { font-size: 15px;}
+</style>
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<FONT color='#0066CC'><FONT size = 4 >
+
+::: {align="center"}
+Fouille de données avec R pour la data science et l'intelligence artificielle\
+
+Projet 2 : Analyse factorielle discriminante
+:::
+
+
+</FONT></FONT>
+
+<FONT color='#0066CC'><FONT size = 4 >
+
+::: {align="center"}
+Eliott Vigier et Alexandre Wu -- ESIEE Paris\
+:::
+
+</FONT></FONT>
+
+<hr style="border: 1px  solid gray">
+
+</hr>
+
+**Résumé :** Pour le projet 2, axé sur un niveau intermédiaire d'analyse factorielle discriminante (AFD), vous travaillerez avec un ensemble de données Twitter Entity Sentiment Analysis. Cet ensemble de données se compose de tweets associés à diverses entités et du sentiment exprimé à l'égard de ces entités. L'AFD peut être appliquée pour réduire la dimensionnalité des données et pour visualiser la manière dont les tweets se regroupent autour des sentiments.
+
+<br>
+
+**Objectif principal :** Utiliser l'analyse factorielle discriminante (AFD) pour réduire les dimensions des données des tweets et visualiser le regroupement des sentiments.
+
+<br>
+
+**Source des données :** jeu de données Twitter Entity Sentiment Analysis (Kaggle).
+
+* **Lien :** https://www.kaggle.com/datasets/jp797498e/twitter entity sentiment analysis
+
+<br>
+
+<hr style="border: 1px  solid gray">
+
+### <FONT color='#000033'><FONT size = 3> 1 Introduction  </FONT></FONT> 
+
+Le projet se concentre sur l'utilisation de l'Analyse Factorielle Discriminante (AFD) pour explorer et classifier les sentiments exprimés dans les tweets. À travers une méthodologie rigoureuse, nous aborderons le prétraitement des données, l'ingénierie des caractéristiques, et l'application de l'AFD pour réduire la dimensionnalité des données et visualiser le regroupement des sentiments. Ce travail vise à démontrer comment l'AFD peut servir d'outil puissant pour analyser les sentiments dans les tweets, en offrant une approche méthodique pour nettoyer et transformer les données textuelles, appliquer des techniques d'ingénierie des caractéristiques telles que TF-IDF, et évaluer les modèles à l'aide de métriques spécifiques. Ce projet illustre non seulement l'application pratique de l'AFD dans l'analyse des sentiments mais aussi son potentiel pour fournir des insights précieux sur la manière dont les émotions sont exprimées et perçues dans les espaces numériques.
+
+<br>
+<hr style="border: 1px  solid gray">
+
+#### <FONT color='#000033'><FONT size = 3> 1.1 Programmation </FONT> 
+
+Nous utilisons :   
+
+- `dplyr` : Manipulation de données avec des fonctions intuitives.
+- `plotly` : Création de graphiques interactifs.
+- `tidyverse` : Collection de packages pour la science des données (inclut `dplyr`, `ggplot2`, etc.).
+- `stringr` : Manipulation de chaînes de caractères.
+- `tm` : Gestion et traitement de textes pour l'analyse de contenu.
+- `kableExtra` : [Génération de tableaux améliorés](https://cran.r-project.org/web/packages/kableExtra/vignettes/awesome_table_in_html.html) en HTML ou PDF.
+- `knitr` : Intégration de code R dans des documents LaTeX, HTML, Markdown.
+- `text2vec` : Traitement de texte et modélisation vectorielle.
+- `tokenizers` : Tokenisation de texte pour l'analyse.
+- `tidytext` : Traitement de texte dans le cadre du tidyverse.
+- `caret` : Séparation des données ici.
+- `MASS` : Utilisation pour l'AFD (lda).
+- `e1071` : Fonctions pour l'apprentissage statistique, y compris la classification bayésienne.
+
+Nous avons également utilisé Chat GPT comme aide à se projet. 
+
+
+<br>
+
+### <FONT color='#000033'><FONT size = 3> 2 Chargement et exploration des données </FONT></FONT>
+
+<br>
+
+##### <FONT color='#000033'><FONT size =3> 2.1 Chargez le jeu de données dans R </FONT> </FONT> 
+
+On commence à charger les librairies nécessaires pour le projet :
+```{r}
+library(dplyr)
+library(plotly)
+library(tidyverse) 
+library(stringr)
+library(tm) 
+library(kableExtra)
+library(knitr)
+library(text2vec)
+library(tokenizers)
+library(tidytext)
+library(caret)
+library(MASS)
+library(e1071)
+```
+
+Ensuite on charge le dataset :
+
+```{r, echo = T}
+# Chargement des jeux de données
+val <- read.csv("twitter_validation.csv")
+train <- read.csv("twitter_training.csv")
+```
+
+Affichage du tableau avec *kableExtra* des deux jeux données
+
+```{r, echo = T}
+val %>%
+  kbl(digits=3) %>%  
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>% scroll_box( height = "250px")
+```
+On affiche seulement les 6 premières lignes comme le jeu de données est volumineux
+```{r, echo = T}
+# Affichage des premières lignes
+head(train, 6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') 
+```
+<br>
+
+##### <FONT color='#000033'><FONT size =3> 2.2 Analyse exploratoire des données (EDA) pour comprendre la distribution des classes </FONT> </FONT> 
+
+On renomme les colonnes avec des noms plus courants
+```{r, echo = T}
+# Affecter les nouveaux noms de colonnes à la dataframe 'val'
+colnames(val)<- c('id','information','type','text')
+# Affecter les nouveaux noms de colonnes à la dataframe 'train'
+colnames(train)<- c('id','information','type','text')
+```
+
+
+Affichage du tableau avec *kableExtra* des deux jeux données
+
+
+```{r, echo = T}
+val %>%
+  kbl(digits=3) %>%  
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>% scroll_box( height = "250px")
+```
+```{r, echo = T}
+head(train, 6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') 
+```
+
+On vérifie que les données sont toutes dans le même format pour la colonne text
+```{r, echo = T}
+# Compte et affiche le nombre d'occurrences de chaque type
+types <- sapply(val$text, typeof)
+
+table(types)
+```
+Elles sont toutes du type 'character'
+On regarde ensuite s'il y a des données manquantes
+
+```{r, echo = T}
+# Compte et affiche le nombre de valeurs manquantes
+Na_num_val<-sum(is.na(val$text))
+Na_num_val
+```
+On constate qu'il n'y en a pas.
+
+On cherche les différents type de sentuments du dataset
+```{r, echo = T}
+# Type de sentiments
+type_val<-unique(val$type)
+type_val
+```
+
+
+On a alors 4 différents types : Positive, Negative, Neutral et Irrelevant.
+
+On observe la distribution des types de sentiments du jeu de données.
+```{r, echo = T}
+# Nombre par type de sentiments
+val_type_distribution <- table(val$type)
+val_type_distribution
+```
+La répartion est assez égale pour Positive, Negative et Neutral. Cependant Irrelevant est moins présent. On peut l'observer avec cette interprétation graphique.
+
+```{r, echo = T}
+ggplot(val, aes(x=type, fill = type)) +
+      geom_bar() +
+      scale_fill_brewer(palette = "Set1") +
+      xlab("type") +
+      ylab("Fréquence") +
+      ggtitle("Distribution des types de critiques")
+```
+
+On fait de même pour le deuxième jeu de données
+
+```{r, echo = T}
+# Compte et affiche le nombre d'occurrences de chaque type
+types <- sapply(train$text, typeof)
+
+table(types)
+```
+type 'character'
+
+
+```{r, echo = T}
+# Compte et affiche le nombre de valeurs manquantes
+Na_num_val<-sum(is.na(train$text))
+Na_num_val
+```
+0 données manquantes
+
+```{r, echo = T}
+# Type de sentiments
+type_train<-unique(train$type)
+type_train
+```
+
+Même type de sentiments
+
+```{r, echo = T}
+# Nombre par type de sentiments
+train_type_distribution <- table(train$type)
+train_type_distribution
+```
+
+Répartion similiaire même si Neutral est moins présent est Negative plus.
+```{r, echo = T}
+ggplot(train, aes(x=type, fill = type)) +
+      geom_bar() +
+      scale_fill_brewer(palette = "Set1") +
+      xlab("type") +
+      ylab("Fréquence") +
+      ggtitle("Distribution des types de critiques")
+```
+
+Ensuite on regarde pour les deux jeux de données leurs répartitions des tweets en fonction des marques qui les écrivent et leurs types de sentiments
+
+```{r, echo = T}
+# Préparation des données
+plot1 <- train %>%
+  group_by(information, type) %>%
+  summarise(count = n()) %>%
+  ungroup()  
+
+head(plot1,4) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') 
+```
+
+
+```{r, echo = T}
+ggplot(plot1, aes(x = information, y = count, fill = type)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = "Marque", y = "Nombre de tweets", title = "Distribution des tweets par marque et type d'émotion") +
+  scale_fill_brewer(palette = "Set1") +  
+  theme(legend.position = "bottom")  
+```
+
+
+```{r, echo = T}
+# Préparation des données
+plot2 <- val %>%
+  group_by(information, type) %>%
+  summarise(count = n()) %>%
+  ungroup()
+
+head(plot2,4) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') 
+```
+
+
+```{r, echo = T}
+ggplot(plot2, aes(x = information, y = count, fill = type)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = "Marque", y = "Nombre de tweets", title = "Distribution des tweets par marque et type d'émotion") +
+  scale_fill_brewer(palette = "Set1") +  
+  theme(legend.position = "bottom")  
+```
+
+
+<hr>
+
+<br>
+
+Nous cherchons à predire les émotions associées aux différents tweets. Pour réaliser cette analyse, nous allons procéder par étape. Il y a 4 émotions
+Positive, Negative, Neutral et Irrelevant. Nous allons faire 3 cas :
+
+1er cas : Seulement Positive et Negative
+
+2e cas : Positive, Negative et Neutral
+
+3e cas : Positive, Negative, Neutral et Irrelevant
+
+<br>
+
+### <FONT color='#000033'> <FONT size = 3> 3 Modèle 1 </FONT></FONT>
+
+<br>
+
+#### <FONT color='#000033'> <FONT size = 3> 3.1 Prétraitement des données </FONT></FONT>
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 3.1.1 Nettoyage les données textuelles en supprimant les caractères spéciaux, les URL et les mots vides. </FONT></FONT>
+
+<br>
+
+
+```{r, echo = T}
+# Supprimer les lignes où type est 'Neutral' ou 'Irrelevant'
+val_1 <- subset(val, type != "Neutral" & type != "Irrelevant")
+train_1<- subset(train, type != "Neutral" & type != "Irrelevant")
+```
+
+Tout d'abord nous décidons de prendre seulement 10 % du jeu de données car au delà, nous rencontrons des problèmes pour la lda (Error : stack overflow)
+
+```{r, echo = T}
+# Supposons que 'train' est votre dataframe et 'type' est la colonne des classes
+# Définir la taille de l'échantillon à conserver (par exemple, 80% de l'ensemble original)
+sample_size <- 0.1
+
+# Créer une partition stratifiée pour maintenir la distribution des classes
+set.seed(123) # Pour la reproductibilité
+trainIndex_1 <- createDataPartition(train_1$type, p = sample_size, list = FALSE)
+
+# Créer le nouveau dataframe réduit
+train_1 <- train_1[trainIndex_1, ]
+```
+
+
+Répartions des classes
+```{r, echo = T}
+# Nombre par type de sentiments
+train_1_type_distribution <- table(train_1$type)
+train_1_type_distribution
+```
+
+
+```{r, echo = T}
+ggplot(train_1, aes(x=type, fill = type)) +
+      geom_bar() +
+      scale_fill_brewer(palette = "Set1") +
+      xlab("type") +
+      ylab("Fréquence") +
+      ggtitle("Distribution des types de critiques")
+```
+
+On va netoyer les données en supprimant d'abord les URL car sinon on risque de ne pas pouvoir les supprimer si on enlève d'abord les caractères spéciaux.
+On enlèvera ensuite les caractères spéciaux et smiley.
+On finira par toute mettre en miniscule pour enlèver les mots vides.
+Le résultat sera dans la colonne 'text_clean'.
+On commence avec le jeu de validation et on fera de même pour le jeu d'entrainement.
+
+```{r, echo = T}
+# Étape 1: Supprimer les URL
+
+val_1<- val_1 %>%
+  mutate(text_clean = str_replace_all(text, "\\b\\S+\\.\\w+\\/\\S*\\b", ""))
+
+# Étape 2: Supprimer les caractères spéciaux et smiley
+
+val_1$text_clean <- sapply(val_1$text_clean, removePunctuation)
+
+val_1$text_clean <- sapply(val_1$text_clean, function(x) str_replace_all(x, "[^\\x00-\\x7F]+", ""))
+
+# Étape 3: Convertir en minuscules et supprimer les stop words
+
+# Mettre en miniscule
+val_1$text_clean <- sapply(val_1$text_clean, tolower)
+# Supprimer les mots vides
+val_1$text_clean <- sapply(val_1$text_clean, function(x) removeWords(x, stopwords("en")))
+```
+
+Affichage avec KableExtra après traitement.
+```{r, echo = T}
+val_1 %>%
+  kbl(digits=3) %>%  
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>% scroll_box( height = "250px")
+```
+
+De même pour 'train'.
+```{r, echo = T}
+# Étape 1: Supprimer les URL
+
+train_1 <- train_1 %>%
+  
+  mutate(text_clean = str_replace_all(text, "\\s?\\w+\\s?\\.\\s?(com|fr|uk|it|us|ca|de|net|facebook.com|twitter.com)\\b[\\w\\W]*", ""))
+
+# Étape 2: Supprimer les caractères spéciaux et smiley
+
+train_1$text_clean <- sapply(train_1$text_clean, removePunctuation)
+
+train_1$text_clean <- sapply(train_1$text_clean, function(x) str_replace_all(x, "[^\\x00-\\x7F]+", ""))
+
+# Étape 3: Convertir en minuscules et supprimer les stop words
+
+# Mettre en miniscule
+train_1$text_clean <- sapply(train_1$text_clean, tolower)
+# Supprimer les mots vides
+train_1$text_clean <- sapply(train_1$text_clean, function(x) removeWords(x, stopwords("en")))
+# Supprimer les espaces superflus
+train_1$text_clean <- sapply(train_1$text_clean, stripWhitespace)
+```
+
+```{r, echo = T}
+head(train_1,6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') 
+```
+
+
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 3.1.2 Convertissement des étiquettes de sentiment dans un format numérique adapté à DFA. </FONT></FONT>
+
+<br>
+
+On va convertir les types de sentiments en entiers.
+
+Pour 'train'.
+
+```{r, echo = T}
+# Convertir les étiquettes de sentiment en entiers
+emotions_type_train_1 <- unique(train_1$type)
+# Utilise les types d'émotions uniques comme niveaux dans la conversion de facteurs
+train_1 <- train_1 %>%
+  mutate(sentiment_numeric = as.integer(factor(type, levels = emotions_type_train_1))-1)
+```
+Pour 'val'.
+```{r, echo = T}
+# Utilise les types d'émotions uniques comme niveaux dans la conversion de facteurs
+val_1 <- val_1 %>%
+  mutate(sentiment_numeric = as.integer(factor(type, levels = emotions_type_train_1))-1)
+```
+
+Affichage avec KableExtra.
+
+```{r, echo = T}
+head(train_1, 6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') 
+```
+
+```{r, echo = T}
+head(val_1,6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') 
+```
+
+<br>
+
+#### <FONT color='#000033'> <FONT size = 3> 3.2 Ingénierie des caractéristiques (feature engineering) </FONT></FONT>
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 3.2.1 TF-IDF </FONT></FONT>
+
+<br>
+
+On va réaliser une TF-IDF pour le jeu d'entrainement.
+
+On Commence par tokeniser.
+
+```{r, echo = T}
+# Tokenisation
+train_1$token<- sapply(train_1$text_clean,tokenize_words)
+train_1$token <- sapply(train_1$token, paste, collapse = " ")
+
+head(train_1,6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+On fait ensuite la TF-IDF.
+
+```{r, echo = T}
+# TF-IDF
+# Étape 1: Création d'un corpus
+corpus_train_1 <- VCorpus(VectorSource(train_1$token))
+# Étape 2: Création d'une DTM et application de la TF-IDF
+dtm_train_1 <- DocumentTermMatrix(corpus_train_1, control = list(weighting = weightTfIdf))
+
+# Sauvegarde du vocabulaire pour le jeu d'entraînement
+dict_1 <- Terms(dtm_train_1)
+
+# Convertir en dataframe 
+tf_idf_train_dataframe_1 <- as.data.frame(as.matrix(dtm_train_1))
+
+
+# Affichage des 5 premières et dernières colonnes 
+head(tf_idf_train_dataframe_1[, c(1:5, (ncol(tf_idf_train_dataframe_1)-4):ncol(tf_idf_train_dataframe_1))], 6)%>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+
+De même pour val.
+
+```{r, echo = T}
+# Tokenisation
+val_1$token<- sapply(val_1$text_clean,tokenize_words)
+val_1$token <- sapply(val_1$token, paste, collapse = " ")
+
+head(val_1,6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+
+```{r, echo = T}
+# TF-IDF
+# Étape 1: Création d'un corpus
+corpus_val_1 <- VCorpus(VectorSource(val_1$token))
+# Étape 2: Création d'une DTM et application de la TF-IDF
+dtm_val_1<- DocumentTermMatrix(corpus_val_1, control = list(weighting = weightTfIdf, dictionary = dict_1))
+
+# Convertir en dataframe 
+tf_idf_val_dataframe_1 <- as.data.frame(as.matrix(dtm_val_1))
+
+
+# Affichage des 5 premières et dernières colonnes 
+head(tf_idf_val_dataframe_1[, c(1:5, (ncol(tf_idf_val_dataframe_1)-4):ncol(tf_idf_val_dataframe_1))], 6)%>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+On prépare nos vecteurs de test et d'entrainement pour y.
+
+```{r, echo = T}
+y_train_1 <- as.factor(train_1$sentiment_numeric)
+y_test_1 <- as.factor(val_1$sentiment_numeric)
+
+tf_idf_train_dataframe_1$sentiment_numeric <- y_train_1 
+tf_idf_val_dataframe_1$sentiment_numeric <- y_test_1 
+```
+
+La lda d'après la doc prend en compte seulement les colonnes qui ont prises pour l'entrainement. Ainsi pour le test il n'y a pas de problème à donner tf_idf_val_dataframe_1 avec la colonne sentiment_numeric.
+
+<br>
+
+#### <FONT color='#000033'> <FONT size = 3> 3.3 Analyse factorielle discriminante </FONT></FONT>
+
+<br>
+
+
+Etape de traitement longue, on enregistre et charge le modèle dans un fichier fichier Rda.
+
+```{r, echo = T}
+# lda_model_1 <- lda(sentiment_numeric ~ ., data = tf_idf_train_dataframe_1)
+```
+
+```{r, echo = T}
+# save(lda_model_1, file = "lda_model_1.Rda")
+```
+
+```{r, echo = T}
+load("lda_model_1.Rda")
+```
+
+<br>
+
+#### <FONT color='#000033'> <FONT size = 3> 3.4 Visualisation </FONT></FONT>
+
+<br>
+
+Observation de la lda sur les données d'entrainement.
+
+```{r, echo = T}
+X_train_lda_1 <- predict(lda_model_1, tf_idf_train_dataframe_1)$x
+```
+
+Observation graphique.
+
+Positive : 0
+Negative : 1
+
+```{r, echo = T}
+# Visualisation avec seulement LD1
+lda_train_data_1 <- data.frame(X_train_lda_1, Class = y_train_1)
+ggplot(lda_train_data_1, aes(x=LD1, y=1, color=Class)) + 
+  geom_point() +
+  ggtitle("Visualisation LDA des Tweets par Sentiment (Un Axe)") +
+  xlab("Premier axe discriminant (LD1)") +
+  ylab("")
+```
+
+On observe une très bonne répartion du modèle.
+
+On regarde l'effet de cette lda sur les données de test.
+
+```{r, echo = T}
+X_test_lda_1 <- predict(lda_model_1, tf_idf_val_dataframe_1)$x
+```
+
+La répartion ici est moyennement bien et est due aux mots manquants non présents dans le corpus du jeu d'entraînement.
+
+```{r, echo = T}
+# Création d'un DataFrame pour la visualisation de l'ensemble de test
+lda_test_data_1 <- data.frame(X_test_lda_1, Class = y_test_1)
+
+# Visualiser les résultats de LDA pour l'ensemble de test
+ggplot(lda_test_data_1, aes(x = LD1, y = 1, color = Class)) +
+  geom_point() +
+  ggtitle("Visualisation LDA des Données de Test par Classe") +
+  xlab("Premier axe discriminant (LD1)")
+```
+
+<br>
+
+#### <FONT color='#000033'> <FONT size = 3> 3.5 Évaluation du modèle </FONT></FONT>
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 3.5.1 DFA </FONT></FONT>
+
+<br>
+
+Accuracy de l'entraînement.
+
+```{r, echo = T}
+predicted_classes_1 <- predict(lda_model_1, tf_idf_train_dataframe_1)$class
+
+# Calculer l'exactitude
+exactitude_1 <- mean(predicted_classes_1 == y_train_1)
+exactitude_1
+```
+
+On évalue le modèle de prédiction lda.
+
+```{r, echo = T}
+predictions_lda_1 <- predict(lda_model_1, tf_idf_val_dataframe_1)$class
+```
+
+Observation de la matrice de confusion.
+
+```{r, echo = T}
+conf_lda_1<- table("Prediction" = predictions_lda_1, "TRUE Labels" = y_test_1)
+conf_lda_1
+```
+
+
+```{r, echo = T}
+calculate_metrics <- function(confusionMatrix) {
+    # Extracting the number of classes
+    n <- nrow(confusionMatrix)
+    # Initializing vectors to store metrics for each class
+    precision <- numeric(n)
+    recall <- numeric(n)
+    f1_score <- numeric(n)
+    # Calculating metrics for each class
+    for (i in 1:n) {
+      TP <- confusionMatrix[i, i]
+      FP <- sum(confusionMatrix[i, ]) - TP
+      FN <- sum(confusionMatrix[, i]) - TP
+      precision[i] <- TP / (TP + FP)
+      recall[i] <- TP / (TP + FN)
+      f1_score[i] <- ifelse((precision[i] + recall[i]) > 0, (2 * precision[i] * recall[i]) / (precision[i] + recall[i]), 0)
+    }
+    # Calculating the global accuracy
+    global_accuracy <- sum(diag(confusionMatrix)) / sum(confusionMatrix)
+    # Returning a list containing the metrics
+    metrics <-list(
+      "Global Accuracy" = global_accuracy,
+      "Precision" = precision,
+      "Recall" = recall,
+      "F1 Score" = f1_score
+    )
+    # Creating a data frame to display precision, recall, and F1 score for each class
+    metrics_df <- data.frame(
+    Class = rownames(confusionMatrix),
+    Precision = metrics$Precision,
+    Recall = metrics$Recall,
+    `F1 Score` = metrics$`F1 Score`)
+    # Ajout d'une colonne "Global Accuracy" avec des NA
+    metrics_df$`Global Accuracy` <- NA
+    metrics_df
+    # Calcul des moyennes pour les autres métriques
+    average_metrics <- c(
+    "Average",
+    mean(metrics$Precision),
+    mean(metrics$Recall),
+    mean(metrics$`F1 Score`),
+    metrics$`Global Accuracy`  # Ajouter l'accuracy globale pour la ligne "Average"
+    )
+    # Ajout de la ligne des moyennes au data frame
+    metrics_df <- rbind(metrics_df, average_metrics)
+    return (metrics_df)
+  }
+```
+
+```{r, echo = T}
+# Création d'une table de correspondance entre les étiquettes de domaines et les numéros
+emotions_tableau_1 <- setNames(as.character(0:(length(emotions_type_train_1) - 1)), emotions_type_train_1)
+# Affichage
+emotions_tableau_1%>%
+    kbl(digits=3) %>%
+    kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+```{r, echo = T}
+metrics_lda_1 <- calculate_metrics(conf_lda_1)
+
+metrics_lda_1%>%
+    kbl(digits=3) %>%
+    kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 3.5.2 Modèle bayésienne naïf </FONT></FONT>
+
+<br>
+
+Modèle bayésienne naïf
+
+```{r, echo = T}
+NB_model_1 <- naiveBayes(data.frame(X_train_lda_1), y_train_1)
+```
+
+On calcule l’accuracy d’entrainement.
+```{r, echo = T}
+pred_train_bayes_1 <- predict(NB_model_1, newdata = data.frame(X_train_lda_1))
+
+# Calculer l'exactitude d'entrainementw
+exactitude_bayes_1 <- mean(pred_train_bayes_1 == y_train_1)
+exactitude_bayes_1
+```
+
+```{r, echo = T}
+predictions_bayes_1 <- predict(NB_model_1, newdata = data.frame(X_test_lda_1))
+```
+
+Observation de la matrice de confusion.
+
+```{r, echo = T}
+conf_bayes_1<-table(predictions_bayes_1,y_test_1)
+conf_bayes_1
+```
+
+```{r, echo = T}
+# Affichage
+emotions_tableau_1%>%
+    kbl(digits=3) %>%
+    kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+```{r, echo = T}
+metrics_bayes_1 <- calculate_metrics(conf_bayes_1)
+
+metrics_bayes_1%>%
+    kbl(digits=3) %>%
+    kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+
+Pour l'Analyse Discriminante Linéaire (LDA), la précision et le rappel pour les deux classes sont à peu près équivalents, avec une moyenne de 71.99%. Cela démontre une capacité équilibrée du modèle à identifier correctement les classes ainsi qu'à capturer la majorité des vrais positifs.
+
+Le modèle Naïve Bayes affiche des résultats légèrement supérieurs avec une précision et un rappel moyens de 72.37%, reflétant une cohérence entre la prédiction des classes et la détection des cas positifs réels.
+
+La proximité des performances de précision, de rappel et du score F1 pour les deux modèles suggère que la réduction de données via LDA a créé un espace de caractéristiques efficace pour la classification binaire. L'exactitude globale du modèle Naïve Bayes de 72.38% confirme la qualité de la séparation des classes et indique une légère supériorité par rapport au modèle LDA en termes de cohérence des prédictions.
+
+Cependant dans les deux cas, on a une accuracy d'entrainement très élévée (98.25% et 98.24%), pouvant indiqué un léger overfitting.
+
+<br>
+
+### <FONT color='#000033'> <FONT size = 3> 4 Modèle 2 </FONT></FONT>
+
+<br>
+
+#### <FONT color='#000033'> <FONT size = 3> 4.1 Prétraitement des données </FONT></FONT>
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 4.1.1 Nettoyage les données textuelles en supprimant les caractères spéciaux, les URL et les mots vides. </FONT></FONT>
+
+<br>
+
+
+```{r, echo = T}
+# Supprimer les lignes où type est 'Neutral' ou 'Irrelevant'
+val_2 <- subset(val, type != "Irrelevant")
+train_2<- subset(train, type != "Irrelevant")
+```
+
+Tout d'abord nous décidons de prendre seulement 10 % du jeu de données car au delà, nous rencontrons des problèmes pour la lda (Error : stack overflow)
+
+```{r, echo = T}
+# Supposons que 'train' est votre dataframe et 'type' est la colonne des classes
+# Définir la taille de l'échantillon à conserver (par exemple, 80% de l'ensemble original)
+sample_size <- 0.1
+
+# Créer une partition stratifiée pour maintenir la distribution des classes
+set.seed(123) # Pour la reproductibilité
+trainIndex_2 <- createDataPartition(train_2$type, p = sample_size, list = FALSE)
+
+# Créer le nouveau dataframe réduit
+train_2 <- train_2[trainIndex_2, ]
+```
+
+
+Répartions des classes
+```{r, echo = T}
+# Nombre par type de sentiments
+train_2_type_distribution <- table(train_2$type)
+train_2_type_distribution
+```
+
+
+```{r, echo = T}
+ggplot(train_2, aes(x=type, fill = type)) +
+      geom_bar() +
+      scale_fill_brewer(palette = "Set1") +
+      xlab("type") +
+      ylab("Fréquence") +
+      ggtitle("Distribution des types de critiques")
+```
+
+On va netoyer les données en supprimant d'abord les URL car sinon on risque de ne pas pouvoir les supprimer si on enlève d'abord les caractères spéciaux.
+On enlèvera ensuite les caractères spéciaux et smiley.
+On finira par toute mettre en miniscule pour enlèver les mots vides.
+Le résultat sera dans la colonne 'text_clean'.
+On commence avec le jeu de validation et on fera de même pour le jeu d'entrainement.
+
+```{r, echo = T}
+# Étape 1: Supprimer les URL
+
+val_2<- val_2 %>%
+  mutate(text_clean = str_replace_all(text, "\\b\\S+\\.\\w+\\/\\S*\\b", ""))
+
+# Étape 2: Supprimer les caractères spéciaux et smiley
+
+val_2$text_clean <- sapply(val_2$text_clean, removePunctuation)
+
+val_2$text_clean <- sapply(val_2$text_clean, function(x) str_replace_all(x, "[^\\x00-\\x7F]+", ""))
+
+# Étape 3: Convertir en minuscules et supprimer les stop words
+
+# Mettre en miniscule
+val_2$text_clean <- sapply(val_2$text_clean, tolower)
+# Supprimer les mots vides
+val_2$text_clean <- sapply(val_2$text_clean, function(x) removeWords(x, stopwords("en")))
+```
+
+Affichage avec KableExtra après traitement.
+```{r, echo = T}
+val_2 %>%
+  kbl(digits=3) %>%  
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>% scroll_box( height = "250px")
+```
+
+De même pour 'train'.
+```{r, echo = T}
+# Étape 1: Supprimer les URL
+
+train_2 <- train_2 %>%
+  
+  mutate(text_clean = str_replace_all(text, "\\s?\\w+\\s?\\.\\s?(com|fr|uk|it|us|ca|de|net|facebook.com|twitter.com)\\b[\\w\\W]*", ""))
+
+# Étape 2: Supprimer les caractères spéciaux et smiley
+
+train_2$text_clean <- sapply(train_2$text_clean, removePunctuation)
+
+train_2$text_clean <- sapply(train_2$text_clean, function(x) str_replace_all(x, "[^\\x00-\\x7F]+", ""))
+
+# Étape 3: Convertir en minuscules et supprimer les stop words
+
+# Mettre en miniscule
+train_2$text_clean <- sapply(train_2$text_clean, tolower)
+# Supprimer les mots vides
+train_2$text_clean <- sapply(train_2$text_clean, function(x) removeWords(x, stopwords("en")))
+# Supprimer les espaces superflus
+train_2$text_clean <- sapply(train_2$text_clean, stripWhitespace)
+```
+
+```{r, echo = T}
+head(train_2,6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') 
+```
+
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 4.1.2 Convertissement des étiquettes de sentiment dans un format numérique adapté à DFA. </FONT></FONT>
+
+<br>
+
+On va convertir les types de sentiments en entiers.
+
+Pour 'train'.
+
+```{r, echo = T}
+# Convertir les étiquettes de sentiment en entiers
+emotions_type_train_2 <- unique(train_2$type)
+# Utilise les types d'émotions uniques comme niveaux dans la conversion de facteurs
+train_2 <- train_2 %>%
+  mutate(sentiment_numeric = as.integer(factor(type, levels = emotions_type_train_2))-1)
+```
+Pour 'val'.
+```{r, echo = T}
+# Utilise les types d'émotions uniques comme niveaux dans la conversion de facteurs
+val_2 <- val_2 %>%
+  mutate(sentiment_numeric = as.integer(factor(type, levels = emotions_type_train_2))-1)
+```
+
+Affichage avec KableExtra.
+
+```{r, echo = T}
+head(train_2, 6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') 
+```
+
+```{r, echo = T}
+head(val_2,6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') 
+```
+
+<br>
+
+#### <FONT color='#000033'> <FONT size = 3> 4.2 Ingénierie des caractéristiques (feature engineering) </FONT></FONT>
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 4.2.1 TF-IDF </FONT></FONT>
+
+<br>
+
+On va réaliser une TF-IDF pour le jeu d'entrainement.
+
+On Commence par tokeniser.
+
+```{r, echo = T}
+# Tokenisation
+train_2$token<- sapply(train_2$text_clean,tokenize_words)
+train_2$token <- sapply(train_2$token, paste, collapse = " ")
+
+head(train_2,6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+On fait ensuite la TF-IDF.
+
+```{r, echo = T}
+# TF-IDF
+# Étape 1: Création d'un corpus
+corpus_train_2 <- VCorpus(VectorSource(train_2$token))
+# Étape 2: Création d'une DTM et application de la TF-IDF
+dtm_train_2 <- DocumentTermMatrix(corpus_train_2, control = list(weighting = weightTfIdf))
+
+# Sauvegarde du vocabulaire pour le jeu d'entraînement
+dict_2 <- Terms(dtm_train_2)
+
+# Convertir en dataframe 
+tf_idf_train_dataframe_2 <- as.data.frame(as.matrix(dtm_train_2))
+
+# Affichage des 5 premières et dernières colonnes 
+head(tf_idf_train_dataframe_2[, c(1:5, (ncol(tf_idf_train_dataframe_2)-4):ncol(tf_idf_train_dataframe_2))], 6)%>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+
+De même pour val.
+
+```{r, echo = T}
+# Tokenisation
+val_2$token<- sapply(val_2$text_clean,tokenize_words)
+val_2$token <- sapply(val_2$token, paste, collapse = " ")
+
+head(val_2,6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+
+```{r, echo = T}
+# TF-IDF
+# Étape 1: Création d'un corpus
+corpus_val_2 <- VCorpus(VectorSource(val_2$token))
+# Étape 2: Création d'une DTM et application de la TF-IDF
+dtm_val_2<- DocumentTermMatrix(corpus_val_2, control = list(weighting = weightTfIdf, dictionary = dict_2))
+
+# Convertir en dataframe 
+tf_idf_val_dataframe_2 <- as.data.frame(as.matrix(dtm_val_2))
+
+
+# Affichage des 5 premières et dernières colonnes 
+head(tf_idf_val_dataframe_2[, c(1:5, (ncol(tf_idf_val_dataframe_2)-4):ncol(tf_idf_val_dataframe_2))], 6)%>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+On prépare nos vecteurs de test et d'entrainement pour y.
+
+```{r, echo = T}
+y_train_2 <- as.factor(train_2$sentiment_numeric)
+y_test_2 <- as.factor(val_2$sentiment_numeric)
+
+tf_idf_train_dataframe_2$sentiment_numeric <- y_train_2 
+tf_idf_val_dataframe_2$sentiment_numeric <- y_test_2 
+```
+
+<br>
+
+#### <FONT color='#000033'> <FONT size = 3> 4.3 Analyse factorielle discriminante </FONT></FONT>
+
+<br>
+
+
+Etape de traitement longue, on enregistre et charge le modèle dans un fichier fichier Rda.
+
+```{r, echo = T}
+# lda_model_2 <- lda(sentiment_numeric ~ ., data = tf_idf_train_dataframe_2)
+```
+
+```{r, echo = T}
+# save(lda_model_2, file = "lda_model_2.Rda")
+```
+
+```{r, echo = T}
+load("lda_model_2.Rda")
+```
+
+<br>
+
+#### <FONT color='#000033'> <FONT size = 3> 4.4 Visualisation </FONT></FONT>
+
+<br>
+
+Observation de la lda sur les données d'entrainement.
+
+```{r, echo = T}
+X_train_lda_2 <- predict(lda_model_2, tf_idf_train_dataframe_2)$x
+```
+
+Observation graphique.
+
+Positive : 0
+Negative : 2
+Neutral : 1
+
+```{r, echo = T}
+# Visualisation avec LD1 et LD2
+lda_train_data_2 <- data.frame(X_train_lda_2, Class = y_train_2)
+ggplot(lda_train_data_2, aes(x=LD1, y=LD2, color=Class)) + 
+  geom_point() +
+  ggtitle("Visualisation LDA des Tweets par Sentiment (Un Axe)") +
+  xlab("Premier axe discriminant (LD1)") +
+  ylab("Deuxième axe discriminant (LD2)")
+```
+
+On observe une très bonne répartion du modèle.
+
+On regarde l'effet de cette lda sur les données de test.
+
+```{r, echo = T}
+X_test_lda_2 <- predict(lda_model_2, tf_idf_val_dataframe_2)$x
+```
+
+La répartion ici est moyen bien et est due aux mots manquants non présents dans le corpus du jeu d'entraînement.
+
+```{r, echo = T}
+# Création d'un DataFrame pour la visualisation de l'ensemble de test
+lda_test_data_2 <- data.frame(X_test_lda_2, Class = y_test_2)
+
+# Visualiser les résultats de LDA pour l'ensemble de test
+ggplot(lda_test_data_2, aes(x = LD1, y = LD2, color = Class)) +
+  geom_point() +
+  theme_minimal() +
+  ggtitle("Visualisation LDA des Données de Test par Classe") +
+  xlab("Premier axe discriminant (LD1)") +
+  ylab("Deuxième axe discriminant (LD2)")
+```
+
+<br>
+
+#### <FONT color='#000033'> <FONT size = 3> 4.5 Évaluation du modèle </FONT></FONT>
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 4.5.1 DFA </FONT></FONT>
+
+<br>
+
+Accuracy de l'entraînement.
+
+```{r, echo = T}
+predicted_classes_2 <- predict(lda_model_2, tf_idf_train_dataframe_2)$class
+
+# Calculer l'exactitude
+exactitude_2 <- mean(predicted_classes_2 == y_train_2)
+exactitude_2
+```
+
+On évalue le modèle de prédiction lda.
+
+```{r, echo = T}
+predictions_lda_2 <- predict(lda_model_2, tf_idf_val_dataframe_2)$class
+```
+
+Observation de la matrice de confusion.
+
+```{r, echo = T}
+conf_lda_2<- table("Prediction" = predictions_lda_2, "TRUE Labels" = y_test_2)
+conf_lda_2
+```
+
+```{r, echo = T}
+# Création d'une table de correspondance entre les étiquettes de domaines et les numéros
+emotions_tableau_2 <- setNames(as.character(0:(length(emotions_type_train_2) - 1)), emotions_type_train_2)
+# Affichage
+emotions_tableau_2%>%
+    kbl(digits=3) %>%
+    kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+```{r, echo = T}
+metrics_lda_2 <- calculate_metrics(conf_lda_2)
+
+metrics_lda_2%>%
+    kbl(digits=3) %>%
+    kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 4.5.2 Modèle bayésienne naïf</FONT></FONT>
+
+<br>
+
+Modèle bayésienne naïf
+
+```{r, echo = T}
+NB_model_2 <- naiveBayes(data.frame(X_train_lda_2), y_train_2)
+```
+
+On calcule l’accuracy d’entrainement.
+
+```{r, echo = T}
+pred_train_bayes_2 <- predict(NB_model_2, newdata = data.frame(X_train_lda_2))
+
+# Calculer l'exactitude d'entrainementw
+exactitude_bayes_2 <- mean(pred_train_bayes_2 == y_train_2)
+exactitude_bayes_2
+```
+
+```{r, echo = T}
+predictions_bayes_2 <- predict(NB_model_2, newdata = data.frame(X_test_lda_2))
+```
+
+Observation de la matrice de confusion.
+
+```{r, echo = T}
+conf_bayes_2<-table(predictions_bayes_2,y_test_2)
+conf_bayes_2
+```
+
+```{r, echo = T}
+# Affichage
+emotions_tableau_2%>%
+    kbl(digits=3) %>%
+    kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+```{r, echo = T}
+metrics_bayes_2 <- calculate_metrics(conf_bayes_2)
+
+metrics_bayes_2 %>%
+    kbl(digits=3) %>%
+    kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+
+Pour l'Analyse Discriminante Linéaire (LDA), les scores de précision, de rappel et de F1 varient entre les classes, avec des valeurs moyennes respectives de 61.55%, 61.54% et 61.41%. Ces chiffres suggèrent que le modèle LDA a une performance équivalente en termes de précision et de rappel, mais montre des signes de difficulté pour distinguer parmi les trois classes, comme en témoigne une exactitude globale de 61.47%.
+
+Le modèle Naïve Bayes présente une précision légèrement inférieure à celle du modèle LDA avec une moyenne de 60.27%, un rappel similaire de 60.22%, et un score F1 correspondant de 60.23%. L'exactitude globale du modèle est de 60.27%, ce qui est cohérent avec les autres métriques.
+
+La proximité des scores pour Naïve Bayes et LDA indique que, bien que les deux modèles aient des difficultés similaires avec la classification multi-classes, ils parviennent à maintenir une performance globale au-dessus de 60%.
+
+De plus, ici aussi les accuracy d'entrainement sont très élevées (97.03% et 97.08%) donc on pourrait avoir de l'overfitting.
+
+<br>
+
+### <FONT color='#000033'> <FONT size = 3> 5 Modèle 3 </FONT></FONT>
+
+<br>
+
+#### <FONT color='#000033'> <FONT size = 3> 5.1 Prétraitement des données </FONT></FONT>
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 5.1.1 Nettoyage les données textuelles en supprimant les caractères spéciaux, les URL et les mots vides. </FONT></FONT>
+
+<br>
+
+
+```{r, echo = T}
+# Supprimer les lignes où type est 'Neutral' ou 'Irrelevant'
+val_3 <- val
+train_3<- train
+```
+
+Tout d'abord nous décidons de prendre seulement 10 % du jeu de données car au delà, nous rencontrons des problèmes pour la lda (Error : stack overflow)
+
+```{r, echo = T}
+# Supposons que 'train' est votre dataframe et 'type' est la colonne des classes
+# Définir la taille de l'échantillon à conserver (par exemple, 80% de l'ensemble original)
+sample_size <- 0.1
+
+# Créer une partition stratifiée pour maintenir la distribution des classes
+set.seed(123) # Pour la reproductibilité
+trainIndex_3 <- createDataPartition(train_3$type, p = sample_size, list = FALSE)
+
+# Créer le nouveau dataframe réduit
+train_3 <- train_3[trainIndex_3, ]
+```
+
+Répartions des classes
+```{r, echo = T}
+# Nombre par type de sentiments
+train_3_type_distribution <- table(train_3$type)
+train_3_type_distribution
+```
+
+
+```{r, echo = T}
+ggplot(train_3, aes(x=type, fill = type)) +
+      geom_bar() +
+      scale_fill_brewer(palette = "Set1") +
+      xlab("type") +
+      ylab("Fréquence") +
+      ggtitle("Distribution des types de critiques")
+```
+
+On va netoyer les données en supprimant d'abord les URL car sinon on risque de ne pas pouvoir les supprimer si on enlève d'abord les caractères spéciaux.
+On enlèvera ensuite les caractères spéciaux et smiley.
+On finira par toute mettre en miniscule pour enlèver les mots vides.
+Le résultat sera dans la colonne 'text_clean'.
+On commence avec le jeu de validation et on fera de même pour le jeu d'entrainement.
+
+```{r, echo = T}
+# Étape 1: Supprimer les URL
+
+val_3<- val_3 %>%
+  mutate(text_clean = str_replace_all(text, "\\b\\S+\\.\\w+\\/\\S*\\b", ""))
+
+# Étape 2: Supprimer les caractères spéciaux et smiley
+
+val_3$text_clean <- sapply(val_3$text_clean, removePunctuation)
+
+val_3$text_clean <- sapply(val_3$text_clean, function(x) str_replace_all(x, "[^\\x00-\\x7F]+", ""))
+
+# Étape 3: Convertir en minuscules et supprimer les stop words
+
+# Mettre en miniscule
+val_3$text_clean <- sapply(val_3$text_clean, tolower)
+# Supprimer les mots vides
+val_3$text_clean <- sapply(val_3$text_clean, function(x) removeWords(x, stopwords("en")))
+```
+
+Affichage avec KableExtra après traitement.
+```{r, echo = T}
+val_3 %>%
+  kbl(digits=3) %>%  
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') %>% scroll_box( height = "250px")
+```
+
+De même pour 'train'.
+```{r, echo = T}
+# Étape 1: Supprimer les URL
+
+train_3 <- train_3 %>%
+  
+  mutate(text_clean = str_replace_all(text, "\\s?\\w+\\s?\\.\\s?(com|fr|uk|it|us|ca|de|net|facebook.com|twitter.com)\\b[\\w\\W]*", ""))
+
+# Étape 2: Supprimer les caractères spéciaux et smiley
+
+train_3$text_clean <- sapply(train_3$text_clean, removePunctuation)
+
+train_3$text_clean <- sapply(train_3$text_clean, function(x) str_replace_all(x, "[^\\x00-\\x7F]+", ""))
+
+# Étape 3: Convertir en minuscules et supprimer les stop words
+
+# Mettre en miniscule
+train_3$text_clean <- sapply(train_3$text_clean, tolower)
+# Supprimer les mots vides
+train_3$text_clean <- sapply(train_3$text_clean, function(x) removeWords(x, stopwords("en")))
+# Supprimer les espaces superflus
+train_3$text_clean <- sapply(train_3$text_clean, stripWhitespace)
+```
+
+```{r, echo = T}
+head(train_3,6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') 
+```
+
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 5.1.2 Convertissement des étiquettes de sentiment dans un format numérique adapté à DFA. </FONT></FONT>
+
+<br>
+
+On va convertir les types de sentiments en entiers.
+
+Pour 'train'.
+
+```{r, echo = T}
+# Convertir les étiquettes de sentiment en entiers
+emotions_type_train_3 <- unique(train_3$type)
+# Utilise les types d'émotions uniques comme niveaux dans la conversion de facteurs
+train_3 <- train_3 %>%
+  mutate(sentiment_numeric = as.integer(factor(type, levels = emotions_type_train_3))-1)
+```
+Pour 'val'.
+```{r, echo = T}
+# Utilise les types d'émotions uniques comme niveaux dans la conversion de facteurs
+val_3 <- val_3 %>%
+  mutate(sentiment_numeric = as.integer(factor(type, levels = emotions_type_train_3))-1)
+```
+
+Affichage avec KableExtra.
+
+```{r, echo = T}
+head(train_3, 6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') 
+```
+
+```{r, echo = T}
+head(val_3,6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped') 
+```
+
+<br>
+
+#### <FONT color='#000033'> <FONT size = 3> 5.2 Ingénierie des caractéristiques (feature engineering) </FONT></FONT>
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 5.2.1 TF-IDF </FONT></FONT>
+
+<br>
+
+On va réaliser une TF-IDF pour le jeu d'entrainement.
+
+On Commence par tokeniser.
+
+```{r, echo = T}
+# Tokenisation
+train_3$token<- sapply(train_3$text_clean,tokenize_words)
+train_3$token <- sapply(train_3$token, paste, collapse = " ")
+
+head(train_3,6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+On fait ensuite la TF-IDF.
+
+```{r, echo = T}
+# TF-IDF
+# Étape 1: Création d'un corpus
+corpus_train_3 <- VCorpus(VectorSource(train_3$token))
+# Étape 2: Création d'une DTM et application de la TF-IDF
+dtm_train_3 <- DocumentTermMatrix(corpus_train_3, control = list(weighting = weightTfIdf))
+
+# Sauvegarde du vocabulaire pour le jeu d'entraînement
+dict_3 <- Terms(dtm_train_3)
+
+# Convertir en dataframe 
+tf_idf_train_dataframe_3 <- as.data.frame(as.matrix(dtm_train_3))
+
+# Affichage des 5 premières et dernières colonnes 
+head(tf_idf_train_dataframe_3[, c(1:5, (ncol(tf_idf_train_dataframe_3)-4):ncol(tf_idf_train_dataframe_3))], 6)%>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+
+
+
+De même pour val.
+
+```{r, echo = T}
+# Tokenisation
+val_3$token<- sapply(val_3$text_clean,tokenize_words)
+val_3$token <- sapply(val_3$token, paste, collapse = " ")
+
+head(val_3,6) %>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+
+```{r, echo = T}
+# TF-IDF
+# Étape 1: Création d'un corpus
+corpus_val_3 <- VCorpus(VectorSource(val_3$token))
+# Étape 2: Création d'une DTM et application de la TF-IDF
+dtm_val_3<- DocumentTermMatrix(corpus_val_3, control = list(weighting = weightTfIdf, dictionary = dict_3))
+
+# Convertir en dataframe 
+tf_idf_val_dataframe_3 <- as.data.frame(as.matrix(dtm_val_3))
+
+
+# Affichage des 5 premières et dernières colonnes 
+head(tf_idf_val_dataframe_3[, c(1:5, (ncol(tf_idf_val_dataframe_3)-4):ncol(tf_idf_val_dataframe_3))], 6)%>%
+  kbl(digits=3) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+On prépare nos vecteurs de test et d'entrainement pour y.
+
+```{r, echo = T}
+y_train_3 <- as.factor(train_3$sentiment_numeric)
+y_test_3 <- as.factor(val_3$sentiment_numeric)
+
+tf_idf_train_dataframe_3$sentiment_numeric <- y_train_3 
+tf_idf_val_dataframe_3$sentiment_numeric <- y_test_3
+```
+
+<br>
+
+#### <FONT color='#000033'> <FONT size = 3> 5.3 Analyse factorielle discriminante </FONT></FONT>
+
+<br>
+
+
+Etape de traitement longue, on enregistre et charge le modèle dans un fichier fichier Rda.
+
+```{r, echo = T}
+# lda_model_3 <- lda(sentiment_numeric ~ ., data = tf_idf_train_dataframe_3)
+```
+
+```{r, echo = T}
+# save(lda_model_3, file = "lda_model_3.Rda")
+```
+
+```{r, echo = T}
+load("lda_model_3.Rda")
+```
+
+<br>
+
+#### <FONT color='#000033'> <FONT size = 3> 5.4 Visualisation </FONT></FONT>
+
+<br>
+
+Observation de la lda sur les données d'entrainement.
+
+```{r, echo = T}
+X_train_lda_3 <- predict(lda_model_3, tf_idf_train_dataframe_3)$x
+```
+
+Observation graphique.
+
+Positive : 0
+Negative : 1
+Neutral : 2
+Irrelevant : 3
+
+```{r, echo = T}
+# Visualisation avec LD1, LD2 et LD3
+lda_train_data_3 <- data.frame(X_train_lda_3, Class = y_train_3)
+# Création du graphique 3D
+plot_ly(data = lda_train_data_3, x = ~LD1, y = ~LD2, z = ~LD3, color = ~Class, type = "scatter3d", mode = "markers") %>%
+  layout(title = "Visualisation LDA des Tweets par Sentiment (Trois Axes)",
+         scene = list(xaxis = list(title = "LD1"),
+                      yaxis = list(title = "LD2"),
+                      zaxis = list(title = "LD3")))
+```
+
+On observe une très bonne répartion du modèle.
+
+On regarde l'effet de cette lda sur les données de test.
+
+```{r, echo = T}
+X_test_lda_3 <- predict(lda_model_3, tf_idf_val_dataframe_3)$x
+```
+
+La répartion ici est moyen bien et est due aux mots manquants non présents dans le corpus du jeu d'entraînement.
+
+```{r, echo = T}
+# Création d'un DataFrame pour la visualisation de l'ensemble de test
+lda_test_data_3 <- data.frame(X_test_lda_3, Class = y_test_3)
+
+# Visualiser les résultats de LDA pour l'ensemble de test
+# Création du graphique 3D
+plot_ly(data = lda_test_data_3, x = ~LD1, y = ~LD2, z = ~LD3, color = ~Class, type = "scatter3d", mode = "markers") %>%
+  layout(title = "Visualisation LDA des Tweets par Sentiment (Trois Axes)",
+         scene = list(xaxis = list(title = "LD1"),
+                      yaxis = list(title = "LD2"),
+                      zaxis = list(title = "LD3")))
+```
+
+<br>
+
+#### <FONT color='#000033'> <FONT size = 3> 5.5 Évaluation du modèle </FONT></FONT>
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 5.5.1 LDA </FONT></FONT>
+
+<br>
+
+Accuracy de l'entraînement.
+
+```{r, echo = T}
+predicted_classes_3 <- predict(lda_model_3, tf_idf_train_dataframe_3)$class
+
+# Calculer l'exactitude
+exactitude_3 <- mean(predicted_classes_3 == y_train_3)
+exactitude_3
+```
+
+On évalue le modèle de prédiction lda.
+
+```{r, echo = T}
+predictions_lda_3 <- predict(lda_model_3, tf_idf_val_dataframe_3)$class
+```
+
+Observation de la matrice de confusion.
+
+```{r, echo = T}
+conf_lda_3<- table("Prediction" = predictions_lda_3, "TRUE Labels" = y_test_3)
+conf_lda_3
+```
+
+```{r, echo = T}
+# Création d'une table de correspondance entre les étiquettes de domaines et les numéros
+emotions_tableau_3 <- setNames(as.character(0:(length(emotions_type_train_3) - 1)), emotions_type_train_3)
+# Affichage
+emotions_tableau_3%>%
+    kbl(digits=3) %>%
+    kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+```{r, echo = T}
+metrics_lda_3 <- calculate_metrics(conf_lda_3)
+
+metrics_lda_3%>%
+    kbl(digits=3) %>%
+    kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+<br>
+
+##### <FONT color='#000033'> <FONT size = 3> 5.5.2 Modèle bayésienne naïf </FONT></FONT>
+
+<br>
+
+Modèle bayésienne naïf
+
+```{r, echo = T}
+NB_model_3 <- naiveBayes(data.frame(X_train_lda_3), y_train_3)
+```
+
+On calcule l’accuracy d’entrainement.
+```{r, echo = T}
+pred_train_bayes_3 <- predict(NB_model_3, newdata = data.frame(X_train_lda_3))
+
+# Calculer l'exactitude d'entrainementw
+exactitude_bayes_3 <- mean(pred_train_bayes_3 == y_train_3)
+exactitude_bayes_3
+```
+
+```{r, echo = T}
+predictions_bayes_3 <- predict(NB_model_3, newdata = data.frame(X_test_lda_3))
+```
+
+Observation de la matrice de confusion.
+
+```{r, echo = T}
+conf_bayes_3<-table(predictions_bayes_3,y_test_3)
+conf_bayes_3
+```
+
+```{r, echo = T}
+# Affichage
+emotions_tableau_3%>%
+    kbl(digits=3) %>%
+    kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+```{r, echo = T}
+metrics_bayes_3 <- calculate_metrics(conf_bayes_3)
+
+metrics_bayes_3 %>%
+    kbl(digits=3) %>%
+    kable_styling(bootstrap_options = "striped", full_width = F, position = "center", latex_options = 'stripped')
+```
+
+
+Le modèle LDA montre une cohérence dans ses performances avec une précision moyenne de 53.26%, un rappel moyen de 53.27%, et un score F1 moyen de 53.01%. L'exactitude globale est légèrement supérieure à 53.55% ce qui suggère que le modèle parvient à maintenir une performance correcte malgré la présence de quatre classes. Les scores individuels de précision, de rappel et de F1 pour chaque classe indiquent des variations qui soulignent les difficultés spécifiques à chaque classe, avec la classe 2 (Neutrl) ayant la plus basse performance en termes de rappel (44.21%).
+
+Pour le modèle Naïve Bayes, les scores moyens sont légèrement inférieurs à ceux de LDA, avec une précision moyenne de 52.44%, un rappel moyen de 52.64%, et un score F1 moyen de 50.84%. L'exactitude globale est de 51.05%, ce qui est cohérent avec les scores moyens et reflète une performance globale correcte également. Par ailleurs, la classe 3, "Irrelevant" sous Naïve Bayes présente un rappel élevé (66.66%) mais avec une précision significativement plus basse (37.5%), indiquant une tendance à sur-prédire cette classe.
+
+Malgré la réduction de dimensionnalité via LDA, les deux modèles luttent pour atteindre une performance élevée, due en partie à la complexité des données et aux chevauchements entre les classes. En effet une classe "Irrelevant" peut être dure à distinguer des autres classes et on voit bien dans la matrice de confusion NB que cette classe est sur prédite.
+
+Bien évidemment on a une accuracy d'entrainment toujours très élevée ici pour les deux modèles (96.43% et 96.39%) qui peuvent suggérer de l'overfitting.
+
+<br>
+
+<hr style="border: 1px  solid gray">
+
+### <FONT color='#000033'><FONT size = 3> 6 Conclusion  </FONT></FONT> 
+
+<br>
+
+
+
+Les modèles LDA et Naïve Bayes ont été appliqués à un ensemble de données réduit, avec une réduction significative de 90% de la taille originale, pour effectuer une tâche de classification dans des contextes à deux et à quatre classes. Les résultats montrent que les deux modèles parviennent à maintenir une performance correcte malgré la complexité accrue introduite par le nombre de classes et les chevauchements potentiels entre elles. La performance de LDA se situe légèrement au-dessus de celle de Naïve Bayes, avec une exactitude globale de 53.55% contre 51.05% pour Naïve Bayes dans le scénario à quatre classes, et une légère supériorité de Naïve Bayes dans le contexte binaire.
+
+Les taux élevés d'exactitude d'entraînement pour les deux modèles, dépassant les 96% dans tous les cas, suggèrent la possibilité d'overfitting.
+
+La réduction de 90% du jeu de données a eu un impact sur les résultats obtenus. Bien que les modèles aient démontré une capacité à classifier avec une certaine précision, il est fort probable que la disponibilité de plus de données lors de l'entrainement aurait conduit à des performances améliorées.
+
+Enfin certaines classes peuvent être très dures à distinguer comme la montrer le modèle bayésien pour 4 classes avec la classe "Irrelevant" qui était sur prédite.
